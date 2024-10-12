@@ -25,8 +25,8 @@ Antes de instalar e rodar o projeto, certifique-se de ter os seguintes component
 ### 1. Clonar o repositório
 
 ```bash
-git clone https://github.com/seu-usuario/kanban-api.git
-cd kanban-api
+git clone https://github.com/seu-usuario/Kanban-API.git
+cd Kanban-API
 ```
 
 ### 2. Criar um ambiente virtual
