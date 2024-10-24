@@ -8,20 +8,25 @@ from django.conf import settings
 from django.core.validators import RegexValidator
 from django.contrib.auth.models import UserManager, AbstractUser, PermissionsMixin
 
-class UserManager(UserManager):
-    def create_user(self, email, username, cpf, password=None, **extra_fields):
-        if not email:
-            raise ValueError('O campo Email deve ser preenchido')
-        if not cpf:
-            raise ValueError('O campo CPF deve ser preenchido')
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.db import models
 
-        email = self.normalize_email(email)
-        user = self.model(email=email, username=username, cpf=cpf, **extra_fields)
+#BaseUserManager é uma classe do Django que fornece métodos para criar usuários e superusuários
+class UserManager(BaseUserManager):
+    def create_user(self, login, name, password, **extra_fields):
+        if not login:
+            raise ValueError('O campo Login deve ser preenchido')
+        if not name:
+            raise ValueError('O campo Nome deve ser preenchido')
+        if not password:
+            raise ValueError('O campo Senha deve ser preenchido')
+
+        user = self.model(login=login, name=name, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
         return user
     
-    def create_superuser(self, email, username, cpf, password=None, **extra_fields):
+    def create_superuser(self, login, name, password, **extra_fields):
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
 
@@ -30,40 +35,36 @@ class UserManager(UserManager):
         if extra_fields.get('is_superuser') is not True:
             raise ValueError('Superusuário precisa ter is_superuser=True.')
 
-        return self.create_user(email, username, cpf, password, **extra_fields)
+        return self.create_user(login, name, password, **extra_fields)
 
-class User(AbstractUser, PermissionsMixin):
-    cpf = models.CharField(
-        max_length=11, 
-        unique=True,
-        validators=[RegexValidator(regex=r'^\d{11}$', message='CPF deve conter 11 dígitos numéricos')]
-    )
-    address = models.CharField(max_length=255, blank=True, null=True)
-    birth_date = models.DateField(null=True, blank=True)
-    email = models.EmailField(blank=True, unique=True)
+#AbstractBaseUser é uma classe do Django que fornece a implementação de um modelo de usuário customizado
+class User(AbstractBaseUser, PermissionsMixin):
+    login = models.CharField(max_length=150, unique=True)
+    name = models.CharField(max_length=255)
+    password = models.CharField(max_length=128)
+    is_active = models.BooleanField(default=True)
+    is_staff = models.BooleanField(default=False)
 
-    # Evitar conflitos de reverse accessors
     groups = models.ManyToManyField(
         'auth.Group',
-        related_name='kanban_users',  # Define um related_name único
-        blank=True,
-        help_text='The groups this user belongs to.'
+        related_name='kanban_users_groups',  # Alterado para evitar conflito
+        blank=True
     )
     user_permissions = models.ManyToManyField(
         'auth.Permission',
-        related_name='kanban_users_permissions',  # Define um related_name único
-        blank=True,
-        help_text='Specific permissions for this user.'
+        related_name='kanban_users_permissions',  # Alterado para evitar conflito
+        blank=True
     )
 
-    USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['username', 'cpf']
+    USERNAME_FIELD = 'login'
+    REQUIRED_FIELDS = ['name']
 
     objects = UserManager()
 
     def __str__(self):
-        return self.email
+        return self.login
 
+#Modelo das colunas do quadro Kanban, possui nome e posição
 class Column(models.Model):
     name = models.CharField(max_length=100)
     position = models.IntegerField()
@@ -73,20 +74,13 @@ class Column(models.Model):
     def __str__(self):
         return self.name
 
+#Modelo dos cartões do quadro Kanban, possui título, descrição, posição, data de início, data de término, prioridade, categoria, usuário e usuário atribuído
 class Card(models.Model):
     PRIORITY_CHOICES = (
         ('U', 'Urgente'),
         ('I', 'Importante'),
         ('M', 'Média'),
         ('B', 'Baixa'),
-    )
-    CATEGORY_CHOICES = (
-        ('B', 'Backlog'),
-        ('P', 'Em Progresso'),
-        ('S', 'Standby'),
-        ('D', 'Desenvolvida'),
-        ('T', 'Testando'),
-        ('F', 'Finalizada'),
     )
 
     title = models.CharField(max_length=100)
@@ -96,7 +90,6 @@ class Card(models.Model):
     start_date = models.DateTimeField(blank=True, null=True)
     due_date = models.DateTimeField(blank=True, null=True)
     priority = models.CharField(max_length=1, choices=PRIORITY_CHOICES, default='M', null=False, blank=False)
-    category = models.CharField(max_length=1, choices=CATEGORY_CHOICES, default='B', null=False, blank=False)
     fk_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='cards') #FK User
     fk_assigned_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='assigned_cards', null=True, blank=True) #FK User
     created_at = models.DateTimeField(auto_now_add=True)
@@ -105,6 +98,7 @@ class Card(models.Model):
     def __str__(self):
         return self.title
 
+#Modelo das tarefas dos cartões, possui título, posição, cartão e status de conclusão
 class Task(models.Model):
     title = models.CharField(max_length=100)
     position = models.IntegerField()
@@ -117,6 +111,7 @@ class Task(models.Model):
     def __str__(self):
         return self.title
 
+#Modelo das tags, possui nome, cor e cartões
 class Tag(models.Model):
     name = models.CharField(max_length=100)
     color = models.CharField(
@@ -131,6 +126,7 @@ class Tag(models.Model):
     def __str__(self):
         return self.name
 
+#Modelo dos comentários, possui texto, cartão e usuário
 class Comment(models.Model):
     comment_text = models.TextField(blank=True, null=True)
     fk_card = models.ForeignKey(Card, on_delete=models.CASCADE, related_name='comments') #FK Card
@@ -140,6 +136,7 @@ class Comment(models.Model):
     def __str__(self):
         return self.comment_text
 
+#Modelo das notificações, possui mensagem, usuário, tipo e status de leitura
 class Notification(models.Model):
     NOTIFICATION_TYPES = (
         ('comment', 'Comentário'),
@@ -156,6 +153,7 @@ class Notification(models.Model):
     def __str__(self):
         return self.message
 
+#Modelo dos anexos, possui arquivo, cartão e usuário
 class Attachment(models.Model):
     file = models.FileField(upload_to='attachments/')
     fk_card = models.ForeignKey(Card, on_delete=models.CASCADE, related_name='attachments')

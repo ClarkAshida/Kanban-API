@@ -1,4 +1,4 @@
-from datetime import timezone
+from datetime import datetime
 from rest_framework import serializers
 from .models import User, Column, Card, Task, Tag, Comment, Notification, Attachment
 
@@ -6,18 +6,27 @@ from .models import User, Column, Card, Task, Tag, Comment, Notification, Attach
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'cpf', 'address', 'birth_date', 'is_staff', 'is_active']
+        fields = ['id', 'login', 'name', 'password', 'is_staff', 'is_active']
         read_only_fields = ['id', 'is_staff', 'is_active']
 
-    def validate_cpf(self, value):
-        if len(value) != 11 or not value.isdigit():
-            raise serializers.ValidationError("O CPF deve conter exatamente 11 dígitos numéricos.")
-        return value
+    def create(self, validated_data):
+        # Usando o método create_user do UserManager para garantir que a senha seja tratada corretamente
+        user = User.objects.create_user(
+            login=validated_data['login'],
+            name=validated_data['name'],
+            password=validated_data.get('password')
+        )
+        return user
 
-    def validate_birth_date(self, value):
-        if value and value > timezone.now().date():
-            raise serializers.ValidationError("A data de nascimento não pode estar no futuro.")
-        return value
+    def update(self, instance, validated_data):
+        # Se a senha estiver presente nos dados validados, chamamos o método set_password
+        password = validated_data.get('password', None)
+        if password:
+            instance.set_password(password)
+        instance.name = validated_data.get('name', instance.name)
+        instance.login = validated_data.get('login', instance.login)
+        instance.save()
+        return instance
 
 
 # Serializer para o modelo Column
@@ -41,23 +50,19 @@ class ColumnSerializer(serializers.ModelSerializer):
 
 # Serializer para o modelo Card
 class CardSerializer(serializers.ModelSerializer):
-    fk_column = ColumnSerializer(read_only=True)  # Se você quiser incluir os dados completos da coluna
-    fk_user = UserSerializer(read_only=True)      # Se você quiser incluir os dados completos do usuário
+    fk_column = ColumnSerializer(read_only=True)
+    fk_user = UserSerializer(read_only=True)
     fk_column_id = serializers.PrimaryKeyRelatedField(queryset=Column.objects.all(), source='fk_column')
     fk_user_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), source='fk_user')
 
     class Meta:
         model = Card
-        fields = [
-            'id', 'title', 'description', 'fk_column', 'fk_column_id', 'position', 'start_date', 'due_date',
-            'priority', 'category', 'fk_user', 'fk_user_id', 'created_at', 'updated_at', 'fk_assigned_user'
-        ]
+        fields = '__all__'
         read_only_fields = ['id', 'created_at', 'updated_at']
     
     def validate_due_date(self, value):
-        start_date = self.initial_data.get('start_date')
-        if start_date and value and value < start_date:
-            raise serializers.ValidationError("A data de vencimento não pode ser anterior à data de início.")
+        if value and value.date() < datetime.now().date():
+            raise serializers.ValidationError("A data de vencimento não pode ser no passado.")
         return value
 
     def validate_position(self, value):

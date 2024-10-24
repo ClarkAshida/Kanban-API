@@ -3,25 +3,31 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.utils.translation import gettext_lazy as _
 from .models import User, Column, Card, Task, Tag, Comment, Notification, Attachment
 
+from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from .models import User
+
 class UserAdmin(BaseUserAdmin):
     # Campos exibidos na lista de usuários
-    list_display = ('email', 'username', 'cpf', 'is_staff', 'is_superuser')
-    search_fields = ('email', 'username', 'cpf')
-    ordering = ('email',)
+    list_display = ('login', 'name', 'is_staff', 'is_superuser')
+    # Campos de pesquisa na lista de usuários
+    search_fields = ('login', 'name')
+    # Ordenação de usuários por lista de login em ordem alfabética
+    ordering = ('login',)
 
     # Campos do formulário de edição do usuário
     fieldsets = (
-        (None, {'fields': ('username', 'email', 'password')}),
-        (_('Personal Info'), {'fields': ('first_name', 'last_name', 'cpf', 'address', 'birth_date')}),
-        (_('Permissions'), {'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
-        (_('Important dates'), {'fields': ('last_login', 'date_joined')}),
+        (None, {'fields': ('login', 'password')}),
+        ('Personal Info', {'fields': ('name',)}),
+        ('Permissions', {'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
+        ('Important dates', {'fields': ('last_login',)}),
     )
 
     # Campos exibidos no formulário de criação de usuário
     add_fieldsets = (
         (None, {
             'classes': ('wide',),
-            'fields': ('email', 'username', 'cpf', 'password1', 'password2', 'is_staff', 'is_superuser')}
+            'fields': ('login', 'name', 'password1', 'password2', 'is_staff', 'is_superuser')}
         ),
     )
 
@@ -36,8 +42,8 @@ class ColumnAdmin(admin.ModelAdmin):
 
 @admin.register(Card)
 class CardAdmin(admin.ModelAdmin):
-    list_display = ('title', 'fk_column', 'priority', 'category', 'fk_user', 'due_date', 'created_at', 'fk_assigned_user')
-    list_filter = ('priority', 'category', 'fk_column', 'fk_user', 'fk_assigned_user')
+    list_display = ('title', 'fk_column', 'priority', 'fk_user', 'due_date', 'created_at', 'fk_assigned_user')
+    list_filter = ('priority', 'fk_column', 'fk_user', 'fk_assigned_user')
     search_fields = ('title', 'description', 'user__username')
     ordering = ('fk_column', 'position')
     autocomplete_fields = ['fk_column', 'fk_user']
