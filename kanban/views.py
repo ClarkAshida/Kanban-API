@@ -14,11 +14,19 @@ class ColumnViewSet(viewsets.ModelViewSet):
     queryset = Column.objects.all()
     serializer_class = ColumnSerializer
     lookup_field = 'id'
+    
+    def perform_create(self, serializer):
+        # Atribui o usuário autenticado como fk_user
+        serializer.save(fk_user=self.request.user)
+    def perform_update(self, serializer):
+        # Mantém o usuário autenticado como fk_user na atualização
+        serializer.save(fk_user=self.request.user)
 
 class CardViewSet(viewsets.ModelViewSet):
     queryset = Card.objects.all()
     serializer_class = CardSerializer
     lookup_field = 'id'
+
     def perform_create(self, serializer):
         # Atribui o usuário autenticado como fk_user
         serializer.save(fk_user=self.request.user)
@@ -44,6 +52,9 @@ class CommentViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         # Define o usuário logado como o criador do comentário
         serializer.save(fk_user=self.request.user)
+    def perform_update(self, serializer):
+        # Mantém o usuário autenticado como fk_user na atualização
+        serializer.save(fk_user=self.request.user)
 
 class NotificationViewSet(viewsets.ModelViewSet):
     queryset = Notification.objects.all()
@@ -58,3 +69,6 @@ class AttachmentViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         # Define o usuário logado como o criador do anexo
         serializer.save(uploaded_by=self.request.user)
+    def perform_update(self, serializer):
+        # Mantém o usuário autenticado como fk_user na atualização
+        serializer.save(fk_user=self.request.user)

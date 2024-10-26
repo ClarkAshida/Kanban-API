@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from rest_framework import serializers
 from .models import User, Column, Card, Task, Tag, Comment, Notification, Attachment
@@ -6,8 +7,32 @@ from .models import User, Column, Card, Task, Tag, Comment, Notification, Attach
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'login', 'name', 'password', 'is_staff', 'is_active']
+        fields = '__all__'
         read_only_fields = ['id', 'is_staff', 'is_active']
+
+    def validate_login(self, value):
+        # Expressão regular para o padrão de login do Instagram
+        pattern = r"^(?!.*\.\.)(?!.*\.$)(?!^[0-9])(?!^[._])(?!.*[._]{2})[a-zA-Z0-9._]{1,30}$"
+        
+        if not re.match(pattern, value):
+            raise serializers.ValidationError(
+                "O login deve ter entre 1 e 30 caracteres, usar apenas letras, números, "
+                "pontos ou underscores. Não pode começar com números ou pontos, "
+                "nem terminar com ponto ou conter pontos consecutivos."
+            )
+        return value
+
+    def validate_password(self, value):
+        # Expressão regular para garantir uma senha forte
+        password_pattern = (
+            r'^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$'
+        )
+        if not re.match(password_pattern, value):
+            raise serializers.ValidationError(
+                "A senha deve ter pelo menos 8 caracteres, incluindo uma letra maiúscula, "
+                "uma letra minúscula, um número e um caractere especial (@, $, !, %, *, ?, &)."
+            )
+        return value
 
     def create(self, validated_data):
         # Usando o método create_user do UserManager para garantir que a senha seja tratada corretamente
@@ -28,25 +53,25 @@ class UserSerializer(serializers.ModelSerializer):
         instance.save()
         return instance
 
-
 # Serializer para o modelo Column
 class ColumnSerializer(serializers.ModelSerializer):
     class Meta:
         model = Column
-        fields = ['id', 'name', 'position', 'created_at', 'updated_at']
+        fields = '__all__'
         read_only_fields = ['id', 'created_at', 'updated_at']
     def validate_name(self, value):
         if not value.strip():
             raise serializers.ValidationError("O nome da coluna não pode estar vazio.")
         return value
-
+    #PRECISO VALIDAR MELHOR A POSIÇÃO PARA VER SE O USUÁRIO JÁ POSSUI UMA COLUNA COM A MESMA POSIÇÃO
     def validate_position(self, value):
+        # Recupera o usuário autenticado para verificar se ele já tem uma coluna com a mesma posição
+        user = self.context['request'].user
         if value < 0:
             raise serializers.ValidationError('A posição não pode ser um número negativo.')
-        if Column.objects.filter(position=value).exists():
-            raise serializers.ValidationError('Já existe uma coluna com essa posição.')
+        if Column.objects.filter(position=value, fk_user=user).exists():
+            raise serializers.ValidationError('Você já possui uma coluna com essa posição.')
         return value
-
 
 # Serializer para o modelo Card
 class CardSerializer(serializers.ModelSerializer):
@@ -80,7 +105,7 @@ class TaskSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Task
-        fields = ['id', 'title', 'position', 'fk_card', 'fk_card_id', 'completed', 'completed_at', 'created_at', 'updated_at']
+        fields = '__all__'
         read_only_fields = ['id', 'created_at', 'updated_at']
 
     def validate_position(self, value):
@@ -100,7 +125,7 @@ class TaskSerializer(serializers.ModelSerializer):
 class TagSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tag
-        fields = ['id', 'name', 'color', 'created_at', 'updated_at']
+        fields = '__all__'
         read_only_fields = ['id', 'created_at', 'updated_at']
 
     def validate_name(self, value):
@@ -124,7 +149,7 @@ class CommentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Comment
-        fields = ['id', 'comment_text', 'fk_card', 'fk_card_id', 'fk_user', 'fk_user_id', 'created_at']
+        fields = '__all__'
         read_only_fields = ['id', 'created_at']
 
     def validate_comment_text(self, value):
@@ -139,7 +164,7 @@ class NotificationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Notification
-        fields = ['id', 'message', 'notification_type', 'read', 'fk_user', 'fk_user_id', 'created_at']
+        fields = '__all__'
         read_only_fields = ['id', 'created_at']
 
     def validate_message(self, value):
@@ -157,7 +182,7 @@ class AttachmentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Attachment
-        fields = ['id', 'file', 'fk_card', 'fk_card_id', 'uploaded_by', 'uploaded_by_id', 'created_at', 'updated_at']
+        fields = '__all__'
         read_only_fields = ['id', 'created_at', 'updated_at']
 
     def validate_file(self, value):
