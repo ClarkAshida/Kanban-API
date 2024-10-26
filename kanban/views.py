@@ -3,6 +3,8 @@ from rest_framework import viewsets
 from .models import User, Column, Card, Task, Tag, Comment, Notification, Attachment
 from .serializers import UserSerializer, ColumnSerializer, CardSerializer, TaskSerializer, TagSerializer, CommentSerializer, NotificationSerializer, AttachmentSerializer
 from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.views import TokenObtainPairView
+from .serializers import CustomTokenObtainPairSerializer
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
@@ -72,3 +74,6 @@ class AttachmentViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         # Mantém o usuário autenticado como fk_user na atualização
         serializer.save(fk_user=self.request.user)
+
+class CustomTokenObtainPairView(TokenObtainPairView):
+    serializer_class = CustomTokenObtainPairSerializer

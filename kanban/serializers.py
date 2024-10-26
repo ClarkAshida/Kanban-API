@@ -1,6 +1,7 @@
 import re
 from datetime import datetime
 from rest_framework import serializers
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import User, Column, Card, Task, Tag, Comment, Notification, Attachment
 
 # Serializer para o modelo User
@@ -191,3 +192,21 @@ class AttachmentSerializer(serializers.ModelSerializer):
         if not value.name.endswith(('.jpg', '.png', '.pdf')):
             raise serializers.ValidationError("Formato de arquivo não permitido. Use .jpg, .png ou .pdf.")
         return value
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    username_field = 'login'  # Especifica 'login' como o campo de identificação
+
+    def validate(self, attrs):
+        # Substitui `username` por `login` como campo de identificação no SimpleJWT
+        login = attrs.get("login")
+        password = attrs.get("password")
+
+        try:
+            self.user = User.objects.get(login=login)
+        except User.DoesNotExist:
+            raise serializers.ValidationError("Usuário não encontrado.")
+
+        if not self.user.check_password(password):
+            raise serializers.ValidationError("Credenciais inválidas.")
+
+        return super().validate(attrs)
