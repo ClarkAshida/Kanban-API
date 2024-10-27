@@ -1,6 +1,7 @@
 import re
-from datetime import datetime
+from django.utils import timezone
 from rest_framework import serializers
+from django.core.validators import RegexValidator
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import User, Column, Card, Task, Tag, Comment, Notification, Attachment
 
@@ -12,7 +13,7 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'is_staff', 'is_active']
 
     def validate_login(self, value):
-        # Expressão regular para o padrão de login do Instagram
+        # Expressão regular para o padrão de login aceitável
         pattern = r"^(?!.*\.\.)(?!.*\.$)(?!^[0-9])(?!^[._])(?!.*[._]{2})[a-zA-Z0-9._]{1,30}$"
         
         if not re.match(pattern, value):
@@ -60,19 +61,29 @@ class ColumnSerializer(serializers.ModelSerializer):
         model = Column
         fields = '__all__'
         read_only_fields = ['id', 'created_at', 'updated_at']
+    # Método para validar o nome da coluna, não pode estar vazia
     def validate_name(self, value):
         if not value.strip():
             raise serializers.ValidationError("O nome da coluna não pode estar vazio.")
         return value
-    #PRECISO VALIDAR MELHOR A POSIÇÃO PARA VER SE O USUÁRIO JÁ POSSUI UMA COLUNA COM A MESMA POSIÇÃO
+    # Método para validar a posição da coluna, não pode ser um número negativo
     def validate_position(self, value):
-        # Recupera o usuário autenticado para verificar se ele já tem uma coluna com a mesma posição
-        user = self.context['request'].user
         if value < 0:
-            raise serializers.ValidationError('A posição não pode ser um número negativo.')
-        if Column.objects.filter(position=value, fk_user=user).exists():
-            raise serializers.ValidationError('Você já possui uma coluna com essa posição.')
+            raise serializers.ValidationError("A posição não pode ser um número negativo.")
         return value
+    # Método para validar a posição da coluna, não pode haver duas colunas com a mesma posição para o mesmo usuário
+    def validate(self, data):
+        fk_user = data.get('fk_user')
+        position = data.get('position')
+
+        if not fk_user:
+            raise serializers.ValidationError("O usuário associado deve ser fornecido para a coluna.")
+        if Column.objects.filter(position=position, fk_user=fk_user).exists():
+            raise serializers.ValidationError({
+                'position': 'Você já possui uma coluna nessa posição.'
+            })
+        
+        return data
 
 # Serializer para o modelo Card
 class CardSerializer(serializers.ModelSerializer):
@@ -85,18 +96,53 @@ class CardSerializer(serializers.ModelSerializer):
         model = Card
         fields = '__all__'
         read_only_fields = ['id', 'created_at', 'updated_at']
-    
-    def validate_due_date(self, value):
-        if value and value.date() < datetime.now().date():
-            raise serializers.ValidationError("A data de vencimento não pode ser no passado.")
-        return value
 
-    def validate_position(self, value):
-        if value < 0:
-            raise serializers.ValidationError('A posição não pode ser um número negativo.')
-        if Card.objects.filter(position=value, fk_column=self.initial_data.get('fk_column')).exists():
-            raise serializers.ValidationError('Já existe um cartão com essa posição.')
+    # Método para validar a prioridade do cartão, deve ser uma das opções permitidas
+    def validate_priority(self, value):
+        valid_priorities = dict(Card.PRIORITY_CHOICES).keys()  # Obtém as chaves válidas ('U', 'I', 'M', 'B')
+        if value not in valid_priorities:
+            raise serializers.ValidationError(
+                "Prioridade inválida. Escolha uma das seguintes opções: 'U' (Urgente), 'I' (Importante), 'M' (Média), 'B' (Baixa)."
+            )
         return value
+    
+    # Método para validar a posição do cartão, não pode ser um número negativo
+    def validate_position(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError("A posição não pode ser um número negativo.")
+        return value
+    
+    # Método para validar a relação entre data de início e data de prazo final. Valida posição única por coluna
+    def validate(self, data):
+        fk_user = data.get('fk_user')
+        fk_column = data.get('fk_column')
+        position = data.get('position')
+        start_date = data.get('start_date')
+        due_date = data.get('due_date')
+
+        # Verifica que o `fk_user` do Card é o mesmo `fk_user` do Column
+        if fk_column and fk_column.fk_user != fk_user:
+            raise serializers.ValidationError(
+                "O usuário do cartão deve ser o mesmo que o usuário associado à coluna selecionada."
+            )
+        # Validação de unicidade de `position` por coluna
+        if position is not None and fk_column:
+            # Exclui o próprio objeto da validação para casos de atualização
+            queryset = Card.objects.filter(position=position, fk_column=fk_column)
+            if self.instance:
+                queryset = queryset.exclude(id=self.instance.id)
+
+            if queryset.exists():
+                raise serializers.ValidationError({
+                    'position': 'Já existe um cartão nesta posição para esta coluna. Cada posição deve ser única dentro de uma coluna.'
+                })
+
+        if start_date and due_date and due_date < start_date:
+            raise serializers.ValidationError({
+                'due_date': 'A data de vencimento não pode ser anterior à data de início.'
+            })
+    
+        return data
 
 
 # Serializer para o modelo Task
@@ -109,21 +155,52 @@ class TaskSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ['id', 'created_at', 'updated_at']
 
-    def validate_position(self, value):
-        if value < 0:
-            raise serializers.ValidationError("A posição não pode ser um número negativo.")
-        if Task.objects.filter(position=value, fk_card=self.initial_data.get('fk_card')).exists():
-            raise serializers.ValidationError("Já existe uma tarefa com essa posição.")
-        return value
+    def validate(self, data):
+        """
+        Validações:
+        - Garante que `completed_at` seja automaticamente preenchido se `completed=True`.
+        - Exige `completed_at` caso `completed=True`.
+        - Garante que `position` é única dentro de cada `fk_card`.
+        """
+        completed = data.get('completed')
+        completed_at = data.get('completed_at')
+        position = data.get('position')
+        fk_card = data.get('fk_card')
 
-    def validate_finalization(self, data):
-        if data.get('completed') and not data.get('completed_at'):
-            raise serializers.ValidationError("A data de conclusão deve ser fornecida quando a tarefa é marcada como concluída.")
+        # Atribui automaticamente `completed_at` se `completed=True` e `completed_at` não estiver preenchido
+        if completed and not completed_at:
+            data['completed_at'] = timezone.now()
+
+        # Valida que `completed_at` está presente se `completed=True`
+        elif completed and completed_at is None:
+            raise serializers.ValidationError({
+                'completed_at': 'A data de conclusão deve ser fornecida quando a tarefa é marcada como concluída.'
+            })
+
+        # Verifica a unicidade de `position` para cada `fk_card`
+        if position is not None and fk_card:
+            # Exclui a instância atual da validação (para evitar conflito em atualizações)
+            queryset = Task.objects.filter(position=position, fk_card=fk_card)
+            if self.instance:
+                queryset = queryset.exclude(id=self.instance.id)
+
+            if queryset.exists():
+                raise serializers.ValidationError({
+                    'position': 'Já existe uma tarefa nesta posição para este cartão. A posição deve ser única dentro de cada cartão.'
+                })
+
         return data
 
 
 # Serializer para o modelo Tag
 class TagSerializer(serializers.ModelSerializer):
+    color = serializers.CharField(
+        validators=[RegexValidator(
+            regex=r'^#[0-9A-Fa-f]{6}$',
+            message="A cor deve estar no formato hexadecimal, como #FFFFFF ou #000000."
+        )]
+    )
+
     class Meta:
         model = Tag
         fields = '__all__'
@@ -132,12 +209,6 @@ class TagSerializer(serializers.ModelSerializer):
     def validate_name(self, value):
         if Tag.objects.filter(name=value).exists():
             raise serializers.ValidationError("Essa tag já existe.")
-        return value
-    def validate_color(self, value):
-        if not value.startswith('#'):
-            raise serializers.ValidationError("A cor deve ser uma string hexadecimal.")
-        if len(value) != 7:
-            raise serializers.ValidationError("A cor deve ter 7 caracteres.")
         return value
 
 
@@ -168,9 +239,19 @@ class NotificationSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ['id', 'created_at']
 
+    # Método para validar a mensagem da notificação, não pode estar vazia
     def validate_message(self, value):
         if not value.strip():
             raise serializers.ValidationError("A mensagem não pode estar vazia.")
+        return value
+    
+    # Método para validar o tipo de notificação está entre as opções permitidas.
+    def validate_notification_type(self, value):
+        valid_types = dict(Notification.NOTIFICATION_TYPES).keys()  # Obtém as chaves válidas ('comment', 'task_completed', 'card_moved')
+        if value not in valid_types:
+            raise serializers.ValidationError(
+                "Tipo de notificação inválido. Escolha uma das seguintes opções: 'comment' (Comentário), 'task_completed' (Tarefa Concluída), 'card_moved' (Cartão Movido)."
+            )
         return value
 
 
