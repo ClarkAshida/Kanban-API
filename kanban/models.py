@@ -57,6 +57,36 @@ class User(AbstractBaseUser, PermissionsMixin):
     def __str__(self):
         return self.login
 
+class Board(models.Model):
+    name = models.CharField(max_length=100)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    fk_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='boards')
+
+    def has_permission(self, user, permission_type='view'):
+        # Administradores do sistema têm acesso de visualização a todos os quadros
+        if permission_type == 'view' and user.is_staff:
+            return True
+
+        # Dono do quadro tem todas as permissões
+        if self.fk_user == user:
+            return True
+
+        # Verifica as permissões do colaborador
+        collaborator = self.collaborators.filter(fk_user=user).first()
+        if collaborator:
+            if permission_type == 'view':
+                return True
+            if permission_type == 'edit' and collaborator.permission in ['edit', 'admin']:
+                return True
+            if permission_type == 'admin' and collaborator.permission == 'admin':
+                return True
+
+        return False
+
+    def __str__(self):
+        return self.name
+
 # Modelo de coluna (Kanban)
 class Column(models.Model):
     name = models.CharField(max_length=100)
@@ -64,6 +94,7 @@ class Column(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     fk_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='columns')
+    fk_board = models.ForeignKey(Board, on_delete=models.CASCADE, related_name='columns')
 
     def __str__(self):
         return self.name
@@ -83,7 +114,7 @@ class Card(models.Model):
     position = models.IntegerField(blank=True, null=True)
     start_date = models.DateTimeField(blank=True, null=True)
     due_date = models.DateTimeField(blank=True, null=True)
-    priority = models.CharField(max_length=1, choices=PRIORITY_CHOICES, default='M')
+    priority = models.CharField(max_length=1, choices=PRIORITY_CHOICES, default='M', blank=True, null=True)
     fk_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='cards')
     fk_assigned_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='assigned_cards', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -156,3 +187,23 @@ class Attachment(models.Model):
 
     def __str__(self):
         return self.file.name
+    
+# Modelo para gerenciar os colaboradores de um quadro Kanban
+class BoardCollaborator(models.Model):
+    PERMISSION_CHOICES = (
+        ('view', 'Visualizar'),
+        ('edit', 'Editar'),
+        ('admin', 'Administrador'),
+    )
+
+    fk_board = models.ForeignKey(Board, on_delete=models.CASCADE, related_name='collaborators')
+    fk_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='collaborations')
+    permission = models.CharField(max_length=10, choices=PERMISSION_CHOICES, default='view')
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('fk_board', 'fk_user')  # Garante que não existam duplicatas
+
+    def __str__(self):
+        return f"{self.fk_user.name} - {self.fk_board.name} ({self.get_permission_display()})"

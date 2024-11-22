@@ -3,7 +3,7 @@ from django.utils import timezone
 from rest_framework import serializers
 from django.core.validators import RegexValidator
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from .models import User, Column, Card, Task, Tag, Comment, Notification, Attachment
+from .models import User, Board, Column, Card, Task, Tag, Comment, Notification, Attachment, BoardCollaborator
 
 # Serializer para o modelo User
 class UserSerializer(serializers.ModelSerializer):
@@ -54,6 +54,33 @@ class UserSerializer(serializers.ModelSerializer):
         instance.login = validated_data.get('login', instance.login)
         instance.save()
         return instance
+    
+class BoardSerializer(serializers.ModelSerializer):
+    fk_user = UserSerializer(read_only=True)
+    fk_user_id = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), source='fk_user')
+
+    class Meta:
+        model = Board
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def validate_name(self, value):
+        if not value.strip():
+            raise serializers.ValidationError("O nome do quadro não pode estar vazio.")
+        return value
+
+    def validate(self, data):
+        fk_user = data.get('fk_user')
+        name = data.get('name')
+
+        if not fk_user:
+            raise serializers.ValidationError("O usuário associado deve ser fornecido para o quadro.")
+        if Board.objects.filter(name=name, fk_user=fk_user).exists():
+            raise serializers.ValidationError({
+                'name': 'Você já possui um quadro com esse nome.'
+            })
+        
+        return data
 
 # Serializer para o modelo Column
 class ColumnSerializer(serializers.ModelSerializer):
@@ -71,17 +98,23 @@ class ColumnSerializer(serializers.ModelSerializer):
         if value < 0:
             raise serializers.ValidationError("A posição não pode ser um número negativo.")
         return value
+    
     # Método para validar a posição da coluna, não pode haver duas colunas com a mesma posição para o mesmo usuário
     def validate(self, data):
         fk_user = data.get('fk_user')
         position = data.get('position')
-
+        fk_board = data.get('fk_board')
+        # Valida se o usuário associado foi fornecido
         if not fk_user:
             raise serializers.ValidationError("O usuário associado deve ser fornecido para a coluna.")
+        # Valida se já existe uma coluna com a mesma posição para o mesmo usuário
         if Column.objects.filter(position=position, fk_user=fk_user).exists():
             raise serializers.ValidationError({
                 'position': 'Você já possui uma coluna nessa posição.'
             })
+        # Valida se o board pertence ao usuário autenticado
+        if fk_board and fk_board.fk_user != fk_user:
+            raise serializers.ValidationError("Você não tem permissão para adicionar ou editar colunas neste quadro.")
         
         return data
 
@@ -291,3 +324,9 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             raise serializers.ValidationError("Credenciais inválidas.")
 
         return super().validate(attrs)
+
+class BoardCollaboratorSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BoardCollaborator
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at']

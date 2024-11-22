@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.urls import path, include, re_path
 from rest_framework.routers import DefaultRouter
-from kanban.views import UserViewSet, ColumnViewSet, CardViewSet, TaskViewSet, TagViewSet, CommentViewSet, NotificationViewSet, AttachmentViewSet, CustomTokenObtainPairView
+from kanban.views import UserViewSet, BoardViewSet, ColumnViewSet, CardViewSet, TaskViewSet, TagViewSet, CommentViewSet, NotificationViewSet, AttachmentViewSet, CustomTokenObtainPairView, BoardCollaboratorViewSet
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from rest_framework import permissions
@@ -23,6 +23,7 @@ schema_view = get_schema_view(
 
 router = DefaultRouter()
 router.register(r'users', UserViewSet)
+router.register(r'boards', BoardViewSet)
 router.register(r'columns', ColumnViewSet)
 router.register(r'cards', CardViewSet)
 router.register(r'tasks', TaskViewSet)
@@ -30,6 +31,7 @@ router.register(r'tags', TagViewSet)
 router.register(r'comments', CommentViewSet)
 router.register(r'notifications', NotificationViewSet)
 router.register(r'attachments', AttachmentViewSet)
+router.register(r'board-collaborators', BoardCollaboratorViewSet)
 
 urlpatterns = [
     path('admin/', admin.site.urls),

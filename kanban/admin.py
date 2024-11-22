@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.utils.translation import gettext_lazy as _
-from .models import User, Column, Card, Task, Tag, Comment, Notification, Attachment
+from .models import User, Board, Column, Card, Task, Tag, Comment, Notification, Attachment
 
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
@@ -33,6 +33,11 @@ class UserAdmin(BaseUserAdmin):
 
 # Registro do modelo de usuário com a customização
 admin.site.register(User, UserAdmin)
+
+class BoardAdmin(admin.ModelAdmin):
+    list_display = ('name', 'fk_user', 'created_at', 'updated_at')
+    search_fields = ('name', 'fk_user__login')
+    ordering = ('name',)
 
 @admin.register(Column)
 class ColumnAdmin(admin.ModelAdmin):
